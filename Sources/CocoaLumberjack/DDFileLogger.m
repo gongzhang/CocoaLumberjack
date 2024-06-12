@@ -652,6 +652,8 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
         if ([_logFileManager respondsToSelector:@selector(didAddToFileLogger:)]) {
             [_logFileManager didAddToFileLogger:self];
         }
+        
+        _doNotUseFileLock = NO;
     }
 
     return self;
@@ -1364,9 +1366,11 @@ static int exception_count = 0;
 
         // use an advisory lock to coordinate write with other processes
         __auto_type fd = [handle fileDescriptor];
-        while(flock(fd, LOCK_EX) != 0) {
-            NSLogError(@"DDFileLogger: Could not lock logfile, retrying in 1ms: %s (%d)", strerror(errno), errno);
-            usleep(1000);
+        if (![self doNotUseFileLock]) {
+            while(flock(fd, LOCK_EX) != 0) {
+                NSLogError(@"DDFileLogger: Could not lock logfile, retrying in 1ms: %s (%d)", strerror(errno), errno);
+                usleep(1000);
+            }
         }
         if (@available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)) {
             __autoreleasing NSError *error = nil;
@@ -1382,7 +1386,9 @@ static int exception_count = 0;
             [handle seekToEndOfFile];
             [handle writeData:data];
         }
-        flock(fd, LOCK_UN);
+        if (![self doNotUseFileLock]) {
+            flock(fd, LOCK_UN);
+        }
 
         if (implementsDeprecatedDidLog) {
 #pragma clang diagnostic push
